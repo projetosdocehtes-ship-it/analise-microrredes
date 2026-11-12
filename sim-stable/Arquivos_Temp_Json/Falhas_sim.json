@@ -1,0 +1,12 @@
+[
+  {
+    "id_falha": "FALHA_FV_STRINGS_01",
+    "Tipo_Falha": "Perda_String_FV",
+    "id_pv": "PV_1",
+    "T_falha": [0.5],
+    "duracao_falha": [0.25],
+    "strings_totais": [16],
+    "strings_perdidas": [4],
+    "descricao": "Perda transitória de quatro strings do arranjo FV após a energização"
+  }
+]

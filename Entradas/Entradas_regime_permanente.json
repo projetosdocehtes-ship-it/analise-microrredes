@@ -1,0 +1,55 @@
+{
+  "nome_projeto": "ProjetoPowerFlow - regime permanente",
+  "conectado_rede": true,
+  "Config_Simulacao": [
+    {
+      "Tipo_Sim": "RegimePermanente",
+      "Passo_sim": 1,
+      "Tempo_sim": 24
+    }
+  ],
+  "painel_info": [
+    {
+      "pv_id": "PV_1",
+      "Pmp": 610,
+      "quantidade": [20, 1]
+    }
+  ],
+  "inversor_info": [
+    {
+      "inv_id": "Inv_1",
+      "Out_Pmax": 38.5,
+      "Out_VL_nom": 380,
+      "Eficiencia": 0.976,
+      "quantidade": 1
+    }
+  ],
+  "cargas_info": [
+    {
+      "carga_id": "Load_1",
+      "nome_carga": "Carga principal",
+      "curva_carga": "perfil_carga_regime_permanente.csv",
+      "s_instalada": 12000,
+      "fp": 0.95,
+      "quantidade": 1
+    }
+  ],
+  "bateria_info": [],
+  "barramento_info": [
+    {
+      "bus_id": "Bus_ac_1",
+      "tipo": "AC",
+      "fases": 3,
+      "V_linha_nominal": 380,
+      "V_fase_nominal": 220,
+      "V_min": 0.9,
+      "V_max": 1.1
+    }
+  ],
+  "geradordiesel_info": [],
+  "grafo_conexoes": [
+    { "between": ["PV_1", "Inv_1"] },
+    { "between": ["Inv_1", "Bus_ac_1"] },
+    { "between": ["Bus_ac_1", "Load_1"] }
+  ]
+}

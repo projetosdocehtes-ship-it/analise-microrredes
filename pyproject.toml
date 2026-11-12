@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "projeto-power-flow"
+version = "0.1.0"
+description = "Análises elétricas e fundamentais de microrredes"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.24.0",
+  "pandas>=2.0.0",
+  "pandapower>=2.13.0",
+  "requests>=2.31.0",
+  "matplotlib>=3.7.0",
+]
+
+[project.scripts]
+microrredes = "microrredes.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["microrredes*", "Equipamentos*"]

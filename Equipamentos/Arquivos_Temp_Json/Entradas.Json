@@ -1,0 +1,148 @@
+{
+    "nome_projeto": "Projeto Teste CEHTES",
+    "conectado_rede": false,
+    "Config_Simulacao": [
+        {
+            "Tipo_Sim": "Transiente",
+            "Passo_sim": 2E-5,
+            "Tempo_sim": 1,
+            "Algoritmo_EDO": "RK45",
+            "Tol_relativa": 1E-8
+        }
+    ],
+    "Falhas_sim": [
+        {
+            "Tipo_Falha": "Mudanca_Temperatura",
+            "T_falha": [],
+            "duracao_falha": [],
+            "Val_Temp": []
+        },
+        {
+            "Tipo_Falha": "Mudanca_Irradiancia",
+            "T_falha": [],
+            "duracao_falha": [],
+            "Val_Irrad": []
+        },
+        {
+            "Tipo_Falha": "Mudanca_Carga",
+            "T_falha": [],
+            "duracao_falha": [],
+            "Tipo": [],
+            "Pot_Carga": []
+        },
+        {
+            "Tipo_Falha": "Curto_Circuito_CC",
+            "T_falha": [],
+            "String_falha": [],
+            "duracao_falha": []
+        },
+        {
+            "Tipo_Falha": "Curto_Circuito_CA",
+            "T_falha": [],
+            "duracao_falha": []
+        }
+    ],
+    "Clima_Ambiente": [
+        {
+            "clima_id": "Clima_Ambiente",
+            "nome_cidade": "Goiania",
+            "pais": "BR",
+            "data": 20240116
+        }
+    ],
+    "painel_info": [
+        {
+            "pv_id": "PV_1",
+            "fabricante_painel": "CanadianSolar",
+            "modelo_painel": "TOPBiHiKu6-610W",
+            "Pmp": 610,
+            "Isc": 15.97,
+            "Voc": 48,
+            "Imp": 14.96,
+            "Vmp": 40.8,
+            "Uisc": 0.05,
+            "Uvoc": -0.25,
+            "Upmp": -0.29,
+            "material_painel": "Silicio",
+            "eficiencia": 22.6,
+            "quantidade": [20, 1]
+        }
+    ],
+    "inversor_info": [
+        {
+            "inv_id": "Inv_1",
+            "fabricante_inversor": "Deye",
+            "modelo_inversor": "SUN-35K-SG01HP3-EU-BM",
+            "Nm_MPPT": 3,
+            "In_Pmax": 56,
+            "Imax_MPPT": 36,
+            "In_Vnom": 600,
+            "In_Vmin": 150,
+            "In_Vmax": 1000,
+            "In_MPP_Vmin": 150,
+            "In_MPP_Vmax": 850,
+            "Out_Pmax": 38.5,
+            "Out_Imax": 58.4,
+            "Out_VL_nom": 380,
+            "Out_Freq": 60,
+            "Eficiencia": 0.976,
+            "Max_THD": 3,
+            "Fator_pot": 0.9999,
+            "Nm_fases":3,
+            "smart": false,
+            "quantidade": 1
+        }
+    ],
+    "cargas_info": [
+        {
+            "carga_id": "Load_1",
+            "nome_carga": "Mercado",
+            "tipo_carga": "Comercial",
+            "curva_carga": 0,
+            "s_instalada": 12000,
+            "fp": 0.9999,
+            "v_nom": 380,
+            "f_rede": 60,
+            "quantidade": 1
+        }
+    ],
+    "bateria_info": [
+    ],
+    "barramento_info": [
+        {
+            "bus_id": "Bus_ac_1",
+            "tipo": "AC",
+            "fases": 3,
+            "V_linha_nominal": 380,
+            "V_fase_nominal": 220,
+            "V_min": 0.9,
+            "V_max": 1.1
+        }
+    ],
+    "rede_eletrica_info": [
+        {
+            "rede_id": "Rede_1",
+            "fases": 3,
+            "F_nominal": 60,
+            "V_linha_nominal": 380,
+            "V_fase_nominal": 220,
+            "Harmonicos_amp": [],
+            "Harmonicos_ordem": [],
+            "Desbalanco_amp": []
+        }
+    ],
+    "geradordiesel_info": [],
+    "geradorbiogas_info": [],
+    "eletrolizador_info": [],
+    "celulahidrogenio_info": [],
+    "turbinaeolica_info": [],
+
+    "grafo_conexoes": [
+        { "between": ["Clima_Ambiente", "PV_1"] },
+        { "between": ["PV_1", "Inv_1"] },
+        { "between": ["Batt_1", "Inv_1"] },
+        { "between": ["Inv_1", "Bus_ac_1"] },
+        { "between": ["Rede_1", "Bus_ac_1"] },
+        { "between": ["Bus_ac_1", "Load_1"] }
+    ]
+}

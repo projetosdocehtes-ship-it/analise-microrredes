@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+microrredes/dados/cache/*.json
+old/
+
+# Artefatos locais gerados
+/resultados/
+/microrredes.zip
+/CONFORMANCE_REPORT.json
+/Equipamentos/Arquivos_Temp_Json/Resultados_Simulacao/
+/sim-stable/Equipamentos/Arquivos_Temp_Json/Resultados_Simulacao/

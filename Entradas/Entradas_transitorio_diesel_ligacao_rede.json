@@ -1,0 +1,124 @@
+{
+  "nome_projeto": "Ligacao do gerador diesel a carga inicialmente atendida pela rede",
+  "tipo_analise": "transitorio_ligacao_gerador_rede",
+  "conectado_rede": true,
+  "Config_Simulacao": [
+    {
+      "Tipo_Sim": "Transiente",
+      "Passo_sim": 0.001,
+      "Tempo_sim": 1.0,
+      "Algoritmo_EDO": "EulerExplicito"
+    }
+  ],
+  "estudos": {
+    "transitorio": {
+      "Passo_sim": 0.001,
+      "Tempo_sim": 1.0
+    },
+    "regime_permanente": {
+      "periodo": "24h",
+      "tipo_dia": "util",
+      "ano": 2025,
+      "horas": 24
+    }
+  },
+  "rede_teste": {
+    "carga_inicial_kw": 100.0,
+    "fator_potencia_carga": 0.95,
+    "comprimento_linha_km": 0.05,
+    "resistencia_linha_ohm_km": 0.642,
+    "reatancia_linha_ohm_km": 0.083,
+    "capacitancia_linha_nf_km": 0.0,
+    "corrente_linha_max_ka": 0.40
+  },
+  "painel_info": [
+    {
+      "pv_id": "PV_1",
+      "Pmp": 0.0,
+      "quantidade": 1
+    }
+  ],
+  "inversor_info": [
+    {
+      "inv_id": "Inv_1",
+      "Out_Pmax": 0.0,
+      "Out_VL_nom": 380.0,
+      "Eficiencia": 1.0,
+      "quantidade": 1
+    }
+  ],
+  "cargas_info": [
+    {
+      "carga_id": "Load_1",
+      "nome_carga": "Carga inicialmente atendida pela distribuidora",
+      "potencia_transitoria_kw": 100.0,
+      "s_instalada": 12000.0,
+      "fp": 0.95,
+      "quantidade": 1,
+      "curva_carga": "perfil_carga_regime_permanente.csv",
+      "fator_escala_curva": 12.0
+    }
+  ],
+  "bateria_info": [],
+  "barramento_info": [
+    {
+      "bus_id": "Bus_ac_1",
+      "tipo": "AC",
+      "fases": 3,
+      "V_linha_nominal": 380.0,
+      "V_fase_nominal": 220.0,
+      "V_min": 0.9,
+      "V_max": 1.1
+    }
+  ],
+  "geradordiesel_info": [
+    {
+      "diesel_id": "Diesel_1",
+      "potencia_nominal_kw": 275.0,
+      "potencia_minima_kw": 0.0,
+      "potencia_maxima_kw": 275.0,
+      "potencia_inicial_kw": 0.0,
+      "tensao_nominal": 380.0,
+      "frequencia": 60.0,
+      "fator_potencia": 0.8,
+      "inercia_s": 2.5,
+      "droop_percent": 4.0,
+      "tempo_governador_s": 0.20,
+      "tempo_motor_s": 0.50,
+      "tempo_avr_s": 0.05,
+      "ganho_avr": 20.0,
+      "tensao_referencia_pu": 1.0,
+      "tensao_minima_pu": 0.70,
+      "tensao_maxima_pu": 1.10,
+      "queda_tensao_carga_pu": 0.04,
+      "amortecimento_frequencia": 0.05,
+      "xdss_pu": 0.20,
+      "xd_pu": 0.35,
+      "rdss_ohm": 0.01,
+      "constante_decaimento_curto_s": 0.15,
+      "quantidade": 1
+    }
+  ],
+  "Falhas_sim": [
+    {
+      "Tipo_Falha": "Perda_String_FV",
+      "id_pv": "PV_1",
+      "T_falha": [99.0],
+      "duracao_falha": [0.1],
+      "strings_totais": [1],
+      "strings_perdidas": [0]
+    }
+  ],
+  "eventos": [
+    {
+      "tipo": "ligacao_gerador_rede",
+      "inicio_s": 0.1
+    }
+  ],
+  "grafo_conexoes": [
+    { "between": ["PV_1", "Inv_1"] },
+    { "between": ["Inv_1", "Bus_ac_1"] },
+    { "between": ["Bus_ac_1", "Load_1"] },
+    { "between": ["Diesel_1", "Bus_ac_1"] }
+  ]
+}

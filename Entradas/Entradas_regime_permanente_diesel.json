@@ -1,0 +1,102 @@
+{
+  "nome_projeto": "Microrrede offgrid - PV, BESS e gerador diesel",
+  "tipo_analise": "regime_permanente_horario",
+  "conectado_rede": false,
+  "Config_Simulacao": [
+    {
+      "Tipo_Sim": "RegimePermanente",
+      "Passo_sim": 1,
+      "Tempo_sim": 24,
+      "Periodo": "24h",
+      "Tipo_Dia": "util"
+    }
+  ],
+  "painel_info": [
+    {
+      "pv_id": "PV_1",
+      "Pmp": 610,
+      "quantidade": [20, 1]
+    }
+  ],
+  "inversor_info": [
+    {
+      "inv_id": "Inv_1",
+      "Out_Pmax": 38.5,
+      "Out_VL_nom": 380,
+      "Eficiencia": 0.976,
+      "quantidade": 1
+    }
+  ],
+  "cargas_info": [
+    {
+      "carga_id": "Load_1",
+      "nome_carga": "Carga principal",
+      "curva_carga": "perfil_carga_regime_permanente.csv",
+      "fator_escala_curva": 12.0,
+      "s_instalada": 12000,
+      "fp": 0.95,
+      "quantidade": 1
+    }
+  ],
+  "bateria_info": [
+    {
+      "bateria_id": "BESS_1",
+      "capacidade_kwh": 100.0,
+      "potencia_max_carga_kw": 40.0,
+      "potencia_max_descarga_kw": 40.0,
+      "soc_inicial": 70.0,
+      "soc_min": 10.0,
+      "soc_max": 90.0,
+      "eficiencia_carga": 0.95,
+      "eficiencia_descarga": 0.95,
+      "periodo_de_carga": {
+        "permitir_carga": true,
+        "horario_carga_permitido": "08:00-17:00"
+      },
+      "periodo_de_descarga": {
+        "permitir_descarga": true,
+        "horario_descarga_permitido": "18:00-23:00"
+      },
+      "quantidade": 1
+    }
+  ],
+  "barramento_info": [
+    {
+      "bus_id": "Bus_ac_1",
+      "tipo": "AC",
+      "fases": 3,
+      "V_linha_nominal": 380,
+      "V_fase_nominal": 220,
+      "V_min": 0.9,
+      "V_max": 1.1
+    }
+  ],
+  "geradordiesel_info": [
+    {
+      "diesel_id": "Diesel_1",
+      "potencia_nominal_kw": 275.0,
+      "potencia_minima_kw": 82.5,
+      "potencia_maxima_kw": 275.0,
+      "tensao_nominal": 380.0,
+      "frequencia": 60.0,
+      "fator_potencia": 0.8,
+      "xdss_pu": 0.20,
+      "xd_pu": 0.35,
+      "rdss_ohm": 0.01,
+      "custo_oleo_diesel_por_litro": 6.50,
+      "consumo_especifico_litros_por_kwh": 0.25,
+      "custo_equipamento": 0.0,
+      "operacao": {
+        "tempo_operacao_h": 24
+      },
+      "quantidade": 1
+    }
+  ],
+  "grafo_conexoes": [
+    { "between": ["PV_1", "Inv_1"] },
+    { "between": ["Inv_1", "Bus_ac_1"] },
+    { "between": ["BESS_1", "Inv_1"] },
+    { "between": ["Bus_ac_1", "Load_1"] },
+    { "between": ["Diesel_1", "Bus_ac_1"] }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "tipo_analise": "transitorio_gerador_diesel",
+  "modo": "offgrid",
+  "passo_s": 0.01,
+  "duracao_s": 6.0,
+  "carga_inicial_kw": 100.0,
+  "fator_potencia_carga": 0.95,
+  "comprimento_linha_km": 0.05,
+  "resistencia_linha_ohm_km": 0.642,
+  "reatancia_linha_ohm_km": 0.083,
+  "corrente_linha_max_ka": 0.40,
+  "gerador_diesel": {
+    "id_gerador": "Diesel_Teste_1",
+    "potencia_nominal_kw": 275.0,
+    "potencia_minima_kw": 82.5,
+    "potencia_maxima_kw": 275.0,
+    "tensao_nominal_kv": 0.38,
+    "frequencia_nominal_hz": 60.0,
+    "fator_potencia": 0.8,
+    "inercia_s": 2.5,
+    "droop_percent": 4.0,
+    "tempo_governador_s": 0.20,
+    "tempo_motor_s": 0.50,
+    "tempo_avr_s": 0.05,
+    "ganho_avr": 20.0,
+    "tensao_referencia_pu": 1.0,
+    "xdss_pu": 0.20,
+    "xd_pu": 0.35,
+    "rdss_ohm": 0.01,
+    "constante_decaimento_curto_s": 0.15
+  },
+  "eventos": [
+    {
+      "tipo": "degrau_carga",
+      "inicio_s": 1.0,
+      "carga_kw": 200.0
+    },
+    {
+      "tipo": "curto_circuito_3ph",
+      "inicio_s": 3.0,
+      "duracao_s": 0.15,
+      "resistencia_falta_ohm": 0.0,
+      "reatancia_falta_ohm": 0.0
+    }
+  ]
+}
