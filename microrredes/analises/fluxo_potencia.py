@@ -2,14 +2,87 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import json
+import math
 from pathlib import Path
 from typing import Any
+
+from Equipamentos.celula_combustivel_pem import (
+    ParametrosCelulaCombustivelPEM,
+    calcular_ponto_operacao_estacionario as ponto_gerador_hidrogenio,
+)
+from Equipamentos.eletrolisador_pem import (
+    ParametrosEletrolisadorPEM,
+    calcular_ponto_operacao_estacionario,
+)
+from Equipamentos.hidrogenio import (
+    calcular_vazao_h2_celula_combustivel,
+    calcular_vazao_h2_eletrolisador,
+)
+from Equipamentos.gerador_motor_hidrogenio import (
+    GeradorMotorHidrogenio,
+    ParametrosMotorHidrogenio,
+)
 
 
 class DependenciaOpcionalAusente(RuntimeError):
     """Indica que uma análise elétrica requer uma dependência não instalada."""
+
+
+def _parametros_eletrolisador_pem(
+    dados: dict[str, Any], id_eletrolisador: str
+) -> ParametrosEletrolisadorPEM:
+    obrigatorios = (
+        "V_rev_cell_V",
+        "R_ohm_cell_Ohm",
+        "R_act_cell_Ohm",
+        "R_con_cell_Ohm",
+        "n_series_cells",
+    )
+    faltantes = [nome for nome in obrigatorios if dados.get(nome) is None]
+    if faltantes:
+        raise ValueError(
+            "Parâmetros obrigatórios do eletrolisador ausentes: " + ", ".join(faltantes)
+        )
+
+    n_series = AnaliseFluxoPotencia._numero(
+        dados.get("n_series_cells"), "n_series_cells", None
+    )
+    n_parallel = AnaliseFluxoPotencia._numero(
+        dados.get("n_parallel_strings"), "n_parallel_strings", 1.0
+    )
+    for nome, valor in (("n_series_cells", n_series), ("n_parallel_strings", n_parallel)):
+        if valor is None or not valor.is_integer() or valor < 1:
+            raise ValueError(f"{nome} deve ser um inteiro positivo")
+
+    return ParametrosEletrolisadorPEM(
+        V_rev_cell_V=AnaliseFluxoPotencia._numero(
+            dados.get("V_rev_cell_V"), "V_rev_cell_V", None
+        ),
+        R_ohm_cell_Ohm=AnaliseFluxoPotencia._numero(
+            dados.get("R_ohm_cell_Ohm"), "R_ohm_cell_Ohm", None
+        ),
+        R_act_cell_Ohm=AnaliseFluxoPotencia._numero(
+            dados.get("R_act_cell_Ohm"), "R_act_cell_Ohm", None
+        ),
+        R_con_cell_Ohm=AnaliseFluxoPotencia._numero(
+            dados.get("R_con_cell_Ohm"), "R_con_cell_Ohm", None
+        ),
+        n_series_cells=int(n_series),
+        C_dle_cell_F=AnaliseFluxoPotencia._numero(
+            dados.get("C_dle_cell_F"), "C_dle_cell_F", None
+        ),
+        C_act_cell_F=AnaliseFluxoPotencia._numero(
+            dados.get("C_act_cell_F"), "C_act_cell_F", None
+        ),
+        C_con_cell_F=AnaliseFluxoPotencia._numero(
+            dados.get("C_con_cell_F"), "C_con_cell_F", None
+        ),
+        n_parallel_strings=int(n_parallel),
+        variant=str(dados.get("variant") or "combined_dle"),
+        id_eletrolisador=id_eletrolisador,
+    )
 
 
 def _importar_pandapower() -> Any:
@@ -108,7 +181,8 @@ class AnaliseFluxoPotencia:
         O formato aceito é o mesmo contrato de equipamentos usado pelo
         simulador transitório e pelo arquivo legado: ``painel_info``,
         ``inversor_info``, ``cargas_info``, ``bateria_info``,
-        ``barramento_info``, ``geradordiesel_info`` e ``grafo_conexoes``.
+        ``barramento_info``, ``geradordiesel_info``,
+        ``eletrolisador_pem_info`` e ``grafo_conexoes``.
         Cada chamada carrega uma rede nova, sem compartilhar estado com outro
         estudo.
         """
@@ -148,8 +222,73 @@ class AnaliseFluxoPotencia:
         painel = cls._primeiro_registro(documento, "painel_info")
         bateria = cls._primeiro_registro(documento, "bateria_info")
         diesel = cls._primeiro_registro(documento, "geradordiesel_info")
-        ids = cls._ids_eletricos(documento, barramento, painel, bateria, carga, diesel)
-        sn_mva = max(cls._potencia_aparente_carga_mva(carga), 1.0)
+        eletrolisador = cls._primeiro_registro(documento, "eletrolisador_pem_info")
+        gerador_hidrogenio = cls._primeiro_registro(documento, "gerador_hidrogenio_info")
+        if not gerador_hidrogenio:
+            gerador_hidrogenio = cls._primeiro_registro(
+                documento, "celula_combustivel_pem_info"
+            )
+        motor_hidrogenio = cls._primeiro_registro(documento, "motor_hidrogenio_info")
+        if gerador_hidrogenio and motor_hidrogenio:
+            raise ValueError(
+                "Selecione uma alternativa de geração a hidrogênio por estudo: PEMFC ou motor reciprocante"
+            )
+        parametros_eletrolisador = (
+            cls.calcular_carga_eletrolisador_pem(eletrolisador) if eletrolisador else None
+        )
+        parametros_gerador_hidrogenio = (
+            cls.calcular_geracao_hidrogenio_pem(gerador_hidrogenio)
+            if gerador_hidrogenio
+            else None
+        )
+        parametros_motor_hidrogenio = (
+            cls.calcular_geracao_motor_hidrogenio(motor_hidrogenio)
+            if motor_hidrogenio
+            else None
+        )
+        ids = cls._ids_eletricos(
+            documento,
+            barramento,
+            painel,
+            bateria,
+            carga,
+            diesel,
+            eletrolisador,
+            gerador_hidrogenio,
+            motor_hidrogenio,
+        )
+        potencia_aparente_eletrolisador_mva = (
+            math.hypot(
+                parametros_eletrolisador["potencia_ac_kw"],
+                parametros_eletrolisador["potencia_reativa_ac_kvar"],
+            )
+            / 1000.0
+            if parametros_eletrolisador
+            else 0.0
+        )
+        sn_mva = max(
+            cls._potencia_aparente_carga_mva(carga),
+            potencia_aparente_eletrolisador_mva,
+            (
+                math.hypot(
+                    parametros_gerador_hidrogenio["potencia_ac_kw"],
+                    parametros_gerador_hidrogenio["potencia_reativa_ac_kvar"],
+                )
+                / 1000.0
+                if parametros_gerador_hidrogenio
+                else 0.0
+            ),
+            (
+                math.hypot(
+                    parametros_motor_hidrogenio["potencia_ac_kw"],
+                    parametros_motor_hidrogenio["potencia_reativa_ac_kvar"],
+                )
+                / 1000.0
+                if parametros_motor_hidrogenio
+                else 0.0
+            ),
+            1.0,
+        )
         net = pp.create_empty_network(sn_mva=sn_mva)
 
         nomes_barras: dict[str, int] = {}
@@ -187,6 +326,91 @@ class AnaliseFluxoPotencia:
             name=str(carga.get("nome_carga") or carga.get("carga_id") or "Carga"),
         )
 
+        if parametros_eletrolisador:
+            barra_eletrolisador = nomes_barras.get(
+                parametros_eletrolisador["id_eletrolisador"], bus_principal
+            )
+            pp.create_load(
+                net,
+                barra_eletrolisador,
+                p_mw=parametros_eletrolisador["potencia_ac_kw"] / 1000.0,
+                q_mvar=parametros_eletrolisador["potencia_reativa_ac_kvar"] / 1000.0,
+                name=parametros_eletrolisador["id_eletrolisador"],
+            )
+
+        if parametros_gerador_hidrogenio:
+            barra_gerador_hidrogenio = nomes_barras.get(
+                parametros_gerador_hidrogenio["id_gerador"], bus_principal
+            )
+            potencia_fc_mw = parametros_gerador_hidrogenio["potencia_ac_kw"] / 1000.0
+            nome_fc = parametros_gerador_hidrogenio["id_gerador"]
+            potencia_diesel_referencia_kw = cls._numero(
+                diesel.get("potencia_nominal_kw"), "potencia_nominal_kw", 0.0
+            ) or 0.0
+            if not conectado_rede and potencia_diesel_referencia_kw <= 0:
+                pp.create_gen(
+                    net,
+                    barra_gerador_hidrogenio,
+                    p_mw=potencia_fc_mw,
+                    vm_pu=1.0,
+                    slack=True,
+                    name=nome_fc,
+                    sn_mva=max(
+                        math.hypot(
+                            potencia_fc_mw,
+                            parametros_gerador_hidrogenio["potencia_reativa_ac_kvar"] / 1000.0,
+                        ),
+                        0.001,
+                    ),
+                )
+                parametros_gerador_hidrogenio["elemento_pandapower"] = "gen_slack"
+            else:
+                pp.create_sgen(
+                    net,
+                    barra_gerador_hidrogenio,
+                    p_mw=potencia_fc_mw,
+                    q_mvar=parametros_gerador_hidrogenio["potencia_reativa_ac_kvar"] / 1000.0,
+                    name=nome_fc,
+                )
+                parametros_gerador_hidrogenio["elemento_pandapower"] = "sgen"
+
+        if parametros_motor_hidrogenio:
+            barra_motor_hidrogenio = nomes_barras.get(
+                parametros_motor_hidrogenio["id_gerador"], bus_principal
+            )
+            motor_eh_referencia = (
+                not conectado_rede
+                and (cls._numero(diesel.get("potencia_nominal_kw"), "potencia_nominal_kw", 0.0) or 0.0) <= 0
+                and not parametros_gerador_hidrogenio
+            )
+            if motor_eh_referencia:
+                pp.create_gen(
+                    net,
+                    barra_motor_hidrogenio,
+                    p_mw=parametros_motor_hidrogenio["potencia_ac_kw"] / 1000.0,
+                    vm_pu=1.0,
+                    slack=True,
+                    name=parametros_motor_hidrogenio["id_gerador"],
+                    sn_mva=max(
+                        math.hypot(
+                            parametros_motor_hidrogenio["potencia_ac_kw"],
+                            parametros_motor_hidrogenio["potencia_reativa_ac_kvar"],
+                        )
+                        / 1000.0,
+                        0.001,
+                    ),
+                )
+                parametros_motor_hidrogenio["elemento_pandapower"] = "gen_slack"
+            else:
+                pp.create_sgen(
+                    net,
+                    barra_motor_hidrogenio,
+                    p_mw=parametros_motor_hidrogenio["potencia_ac_kw"] / 1000.0,
+                    q_mvar=parametros_motor_hidrogenio["potencia_reativa_ac_kvar"] / 1000.0,
+                    name=parametros_motor_hidrogenio["id_gerador"],
+                )
+                parametros_motor_hidrogenio["elemento_pandapower"] = "sgen"
+
         cls._criar_pv(pp, net, nomes_barras, painel, documento)
         cls._criar_bateria(pp, net, nomes_barras, bateria)
 
@@ -194,29 +418,31 @@ class AnaliseFluxoPotencia:
             diesel_bus = nomes_barras.get(str(diesel.get("diesel_id")), bus_principal)
             potencia_diesel_kw = cls._numero(diesel.get("potencia_nominal_kw"), "potencia_nominal_kw", 0.0) or 0.0
             if potencia_diesel_kw <= 0:
-                raise ValueError(
-                    "A entrada está ilhada (conectado_rede=false) e não possui "
-                    "gerador diesel com potência nominal para servir de referência."
+                if not parametros_gerador_hidrogenio and not parametros_motor_hidrogenio:
+                    raise ValueError(
+                        "A entrada está ilhada e não possui gerador diesel ou a hidrogênio "
+                        "para servir de referência."
+                    )
+            else:
+                if diesel_bus != bus_principal and not cls._existe_ligacao(net, diesel_bus, bus_principal):
+                    cls._criar_linha(pp, net, bus_principal, diesel_bus, "Conexão do gerador diesel")
+                parametros_diesel = cls._parametros_diesel_pandapower(diesel, potencia_diesel_kw, vn_kv)
+                pp.create_gen(
+                    net,
+                    diesel_bus,
+                    p_mw=parametros_diesel["p_mw_inicial"],
+                    vm_pu=1.0,
+                    slack=True,
+                    name=str(diesel.get("diesel_id") or "Gerador diesel"),
+                    sn_mva=parametros_diesel["sn_mva"],
+                    max_p_mw=parametros_diesel["max_p_mw"],
+                    min_p_mw=parametros_diesel["min_p_mw"],
+                    type="sync",
+                    vn_kv=parametros_diesel["vn_kv"],
+                    xdss_pu=parametros_diesel["xdss_pu"],
+                    rdss_ohm=parametros_diesel["rdss_ohm"],
+                    cos_phi=parametros_diesel["cos_phi"],
                 )
-            if diesel_bus != bus_principal and not cls._existe_ligacao(net, diesel_bus, bus_principal):
-                cls._criar_linha(pp, net, bus_principal, diesel_bus, "Conexão do gerador diesel")
-            parametros_diesel = cls._parametros_diesel_pandapower(diesel, potencia_diesel_kw, vn_kv)
-            pp.create_gen(
-                net,
-                diesel_bus,
-                p_mw=parametros_diesel["p_mw_inicial"],
-                vm_pu=1.0,
-                slack=True,
-                name=str(diesel.get("diesel_id") or "Gerador diesel"),
-                sn_mva=parametros_diesel["sn_mva"],
-                max_p_mw=parametros_diesel["max_p_mw"],
-                min_p_mw=parametros_diesel["min_p_mw"],
-                type="sync",
-                vn_kv=parametros_diesel["vn_kv"],
-                xdss_pu=parametros_diesel["xdss_pu"],
-                rdss_ohm=parametros_diesel["rdss_ohm"],
-                cos_phi=parametros_diesel["cos_phi"],
-            )
         elif diesel:
             diesel_bus = nomes_barras.get(str(diesel.get("diesel_id")), bus_principal)
             potencia_diesel_kw = cls._numero(diesel.get("potencia_nominal_kw"), "potencia_nominal_kw", 0.0) or 0.0
@@ -249,6 +475,9 @@ class AnaliseFluxoPotencia:
                 if diesel
                 else None
             ),
+            "eletrolisador_pem": parametros_eletrolisador,
+            "gerador_hidrogenio_pem": parametros_gerador_hidrogenio,
+            "motor_hidrogenio": parametros_motor_hidrogenio,
         }
 
     @staticmethod
@@ -292,6 +521,9 @@ class AnaliseFluxoPotencia:
         bateria: dict[str, Any],
         carga: dict[str, Any],
         diesel: dict[str, Any],
+        eletrolisador: dict[str, Any],
+        gerador_hidrogenio: dict[str, Any],
+        motor_hidrogenio: dict[str, Any],
     ) -> list[str]:
         ids = [str(barramento.get("bus_id") or "Bus_ac_1")]
         for registro, campo in (
@@ -304,11 +536,268 @@ class AnaliseFluxoPotencia:
             identificador = registro.get(campo)
             if identificador:
                 ids.append(str(identificador))
+        id_eletrolisador = eletrolisador.get("eletrolisador_id") or eletrolisador.get(
+            "id_eletrolisador"
+        )
+        if id_eletrolisador:
+            ids.append(str(id_eletrolisador))
+        id_gerador_hidrogenio = (
+            gerador_hidrogenio.get("gerador_id")
+            or gerador_hidrogenio.get("id_gerador")
+            or "Gerador_Hidrogenio_PEM_1"
+        )
+        if gerador_hidrogenio:
+            ids.append(str(id_gerador_hidrogenio))
+        id_motor_hidrogenio = (
+            motor_hidrogenio.get("motor_id")
+            or motor_hidrogenio.get("gerador_id")
+            or motor_hidrogenio.get("id_gerador")
+            or "Gerador_Motor_H2_1"
+        )
+        if motor_hidrogenio:
+            ids.append(str(id_motor_hidrogenio))
         resultado: list[str] = []
         for identificador in ids:
             if identificador not in resultado:
                 resultado.append(identificador)
         return resultado
+
+    @classmethod
+    def calcular_carga_eletrolisador_pem(
+        cls, eletrolisador: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Calcula o ponto estático do stack e sua carga equivalente AC.
+
+        O EEC retorna potência elétrica absorvida no lado CC. A conversão para
+        ``load`` pandapower fica fora do stack: por padrão é ideal (eficiência
+        unitária e fator de potência unitário), e pode receber ambos os dados
+        de interface no JSON.
+        """
+
+        if not eletrolisador:
+            return None
+
+        id_eletrolisador = str(
+            eletrolisador.get("eletrolisador_id")
+            or eletrolisador.get("id_eletrolisador")
+            or "Eletrolisador_PEM_1"
+        )
+        parametros = _parametros_eletrolisador_pem(eletrolisador, id_eletrolisador)
+        corrente = cls._numero(
+            eletrolisador.get("corrente_stack_A", eletrolisador.get("i_stack_A")),
+            "corrente_stack_A",
+            None,
+        )
+        if corrente is None:
+            raise ValueError("eletrolisador_pem_info deve informar corrente_stack_A")
+        quantidade = cls._quantidade(eletrolisador.get("quantidade", 1))
+        eficiencia = cls._numero(
+            eletrolisador.get("eficiencia_conversor"), "eficiencia_conversor", 1.0
+        )
+        fator_potencia = cls._numero(
+            eletrolisador.get("fator_potencia_ac"), "fator_potencia_ac", 1.0
+        )
+        if not 0 < eficiencia <= 1:
+            raise ValueError("eficiencia_conversor deve estar entre zero e um")
+        if not 0 < fator_potencia <= 1:
+            raise ValueError("fator_potencia_ac deve estar entre zero e um")
+
+        ponto = calcular_ponto_operacao_estacionario(parametros, corrente)
+        potencia_stack_kw = ponto["stack_power_W"] / 1000.0 * quantidade
+        if potencia_stack_kw < 0:
+            raise ValueError("O ponto PEM deve absorver potência para ser representado como carga")
+        potencia_ac_kw = potencia_stack_kw / eficiencia
+        potencia_reativa_ac_kvar = potencia_ac_kw * math.tan(math.acos(fator_potencia))
+        eficiencia_faradaica = cls._numero(
+            eletrolisador.get("eficiencia_faradaica"), "eficiencia_faradaica", None
+        )
+        producao_h2 = (
+            calcular_vazao_h2_eletrolisador(
+                parametros.n_series_cells,
+                corrente,
+                eficiencia_faradaica,
+                quantidade,
+            )
+            if eficiencia_faradaica is not None
+            else None
+        )
+        return {
+            "id_eletrolisador": id_eletrolisador,
+            "quantidade": quantidade,
+            "parametros_stack": asdict(parametros),
+            "corrente_stack_por_unidade_A": corrente,
+            "ponto_operacao_por_unidade": ponto,
+            "potencia_stack_kw": potencia_stack_kw,
+            "potencia_ac_kw": potencia_ac_kw,
+            "potencia_reativa_ac_kvar": potencia_reativa_ac_kvar,
+            "producao_h2": producao_h2,
+            "eficiencia_faradaica": eficiencia_faradaica,
+            "eficiencia_conversor": eficiencia,
+            "fator_potencia_ac": fator_potencia,
+            "premissa_interface_ac": (
+                "conversor ideal sem perdas nem potência reativa"
+                if eficiencia == 1.0 and fator_potencia == 1.0
+                else "interface AC parametrizada por eficiencia_conversor e fator_potencia_ac"
+            ),
+            "elemento_pandapower": "load",
+        }
+
+    @classmethod
+    def calcular_geracao_hidrogenio_pem(
+        cls, gerador: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Calcula o ponto PEMFC e sua injeção equivalente no lado AC.
+
+        A eficiência do conversor multiplica a potência DC gerada. A potência
+        reativa é opcional e tem convenção de injeção positiva no pandapower.
+        """
+
+        if not gerador:
+            return None
+        id_gerador = str(
+            gerador.get("gerador_id")
+            or gerador.get("id_gerador")
+            or "Gerador_Hidrogenio_PEM_1"
+        )
+        campos = {
+            "V_oc_cell_V",
+            "R_ohm_cell_Ohm",
+            "R_act_cell_Ohm",
+            "R_con_cell_Ohm",
+            "C_dle_cell_F",
+            "n_series_cells",
+            "n_parallel_strings",
+        }
+        dados = {chave: gerador[chave] for chave in campos if chave in gerador}
+        obrigatorios = (
+            "V_oc_cell_V", "R_ohm_cell_Ohm", "R_act_cell_Ohm", "R_con_cell_Ohm",
+            "C_dle_cell_F", "n_series_cells",
+        )
+        faltantes = [chave for chave in obrigatorios if dados.get(chave) is None]
+        if faltantes:
+            raise ValueError(
+                "Parâmetros obrigatórios do gerador PEM ausentes: " + ", ".join(faltantes)
+            )
+        for chave in (
+            "V_oc_cell_V", "R_ohm_cell_Ohm", "R_act_cell_Ohm", "R_con_cell_Ohm",
+            "C_dle_cell_F",
+        ):
+            dados[chave] = cls._numero(dados[chave], chave, None)
+        for chave in ("n_series_cells", "n_parallel_strings"):
+            numero = cls._numero(dados.get(chave), chave, 1.0)
+            if numero is None or not numero.is_integer() or numero < 1:
+                raise ValueError(f"{chave} deve ser um inteiro positivo")
+            dados[chave] = int(numero)
+        if "id_gerador" not in dados:
+            dados["id_gerador"] = id_gerador
+        parametros = ParametrosCelulaCombustivelPEM(**dados)
+        corrente = cls._numero(
+            gerador.get("corrente_stack_A", gerador.get("i_stack_A")),
+            "corrente_stack_A",
+            None,
+        )
+        if corrente is None:
+            raise ValueError("gerador_hidrogenio_info deve informar corrente_stack_A")
+        quantidade = cls._quantidade(gerador.get("quantidade", 1))
+        eficiencia = cls._numero(
+            gerador.get("eficiencia_conversor"), "eficiencia_conversor", 1.0
+        )
+        if eficiencia is None or not 0 < eficiencia <= 1:
+            raise ValueError("eficiencia_conversor deve estar no intervalo (0, 1]")
+        q_kvar = cls._numero(
+            gerador.get("potencia_reativa_ac_kvar"), "potencia_reativa_ac_kvar", 0.0
+        ) or 0.0
+        ponto = ponto_gerador_hidrogenio(parametros, corrente)
+        potencia_stack_kw = ponto["stack_power_W"] / 1000.0 * quantidade
+        potencia_ac_kw = potencia_stack_kw * eficiencia
+        vazao_h2 = calcular_vazao_h2_celula_combustivel(
+            parametros.n_series_cells,
+            corrente,
+            cls._numero(gerador.get("utilizacao_h2"), "utilizacao_h2", 1.0) or 1.0,
+            quantidade,
+        )
+        return {
+            "id_gerador": id_gerador,
+            "quantidade": quantidade,
+            "parametros_stack": asdict(parametros),
+            "corrente_stack_por_unidade_A": corrente,
+            "ponto_operacao_por_unidade": ponto,
+            "potencia_stack_kw": potencia_stack_kw,
+            "potencia_ac_kw": potencia_ac_kw,
+            "potencia_reativa_ac_kvar": q_kvar,
+            "eficiencia_conversor": eficiencia,
+            "consumo_h2": vazao_h2,
+            "elemento_pandapower": "sgen",
+        }
+
+    @classmethod
+    def calcular_geracao_motor_hidrogenio(
+        cls, motor: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Calcula a potência, injeção AC e consumo de H2 de um motor-gerador."""
+        if not motor:
+            return None
+        id_gerador = str(
+            motor.get("motor_id")
+            or motor.get("gerador_id")
+            or motor.get("id_gerador")
+            or "Gerador_Motor_H2_1"
+        )
+        potencia_nominal = cls._numero(
+            motor.get("potencia_nominal_kw"), "potencia_nominal_kw", None
+        )
+        eficiencia = cls._numero(
+            motor.get("eficiencia_eletrica_liquida"),
+            "eficiencia_eletrica_liquida",
+            None,
+        )
+        referencia = cls._numero(
+            motor.get("potencia_referencia_kw", motor.get("potencia_kw")),
+            "potencia_referencia_kw",
+            None,
+        )
+        if potencia_nominal is None or eficiencia is None or referencia is None:
+            raise ValueError(
+                "motor_hidrogenio_info requer potencia_nominal_kw, "
+                "eficiencia_eletrica_liquida e potencia_referencia_kw"
+            )
+        pci_h2 = cls._numero(motor.get("pci_h2_j_kg"), "pci_h2_j_kg", None)
+        parametros = ParametrosMotorHidrogenio(
+            potencia_nominal_kw=potencia_nominal,
+            eficiencia_eletrica_liquida=eficiencia,
+            constante_tempo_s=cls._numero(
+                motor.get("constante_tempo_s"), "constante_tempo_s", None
+            ),
+            rampa_max_kw_min=cls._numero(
+                motor.get("rampa_max_kw_min"), "rampa_max_kw_min", None
+            ),
+            fracao_carga_minima=cls._numero(
+                motor.get("fracao_carga_minima"), "fracao_carga_minima", 0.0
+            ) or 0.0,
+            pci_h2_j_kg=120.0e6 if pci_h2 is None else pci_h2,
+        )
+        quantidade = cls._quantidade(motor.get("quantidade", 1))
+        ponto = GeradorMotorHidrogenio(parametros).ponto_permanente(referencia)
+        potencia_ac_kw = ponto.potencia_eletrica_kw * quantidade
+        fator_potencia = cls._numero(motor.get("fator_potencia_ac"), "fator_potencia_ac", 1.0)
+        if fator_potencia is None or not 0 < fator_potencia <= 1:
+            raise ValueError("fator_potencia_ac deve estar entre zero e um")
+        q_kvar = cls._numero(motor.get("potencia_reativa_ac_kvar"), "potencia_reativa_ac_kvar", None)
+        if q_kvar is None:
+            q_kvar = potencia_ac_kw * math.tan(math.acos(fator_potencia))
+        return {
+            "id_gerador": id_gerador,
+            "quantidade": quantidade,
+            "parametros_motor": asdict(parametros),
+            "potencia_referencia_por_unidade_kw": referencia,
+            "potencia_nominal_por_unidade_kw": potencia_nominal,
+            "potencia_ac_kw": potencia_ac_kw,
+            "potencia_reativa_ac_kvar": q_kvar,
+            "consumo_h2_kg_s": ponto.consumo_h2_kg_s * quantidade,
+            "consumo_h2_kg_h": ponto.consumo_h2_kg_h * quantidade,
+            "fator_potencia_ac": fator_potencia,
+            "elemento_pandapower": "sgen",
+        }
 
     @classmethod
     def _potencia_aparente_carga_mva(cls, carga: dict[str, Any]) -> float:

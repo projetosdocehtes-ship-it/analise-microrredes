@@ -13,6 +13,17 @@ from .analises.transitorio_gerador_diesel import (
     EventoGeradorDiesel,
     TransitorioGeradorDiesel,
 )
+from .analises.transitorio_eletrolisador_pem import (
+    ConfiguracaoTransitorioEletrolisadorPEM,
+    EventoCorrenteEletrolisadorPEM,
+    TransitorioEletrolisadorPEM,
+)
+from .analises.transitorio_ciclo_hidrogenio import (
+    ConfiguracaoTransitorioCicloHidrogenio,
+    EventoCorrenteCicloHidrogenio,
+    TransitorioCicloHidrogenio,
+    comparar_geradores_hidrogenio,
+)
 from .dados.tarifas_aneel import ClienteTarifasANEEL, TarifaSnapshot
 
 __all__ = [
@@ -29,6 +40,13 @@ __all__ = [
     "ConfiguracaoTransitorioDiesel",
     "EventoGeradorDiesel",
     "TransitorioGeradorDiesel",
+    "ConfiguracaoTransitorioEletrolisadorPEM",
+    "EventoCorrenteEletrolisadorPEM",
+    "TransitorioEletrolisadorPEM",
+    "ConfiguracaoTransitorioCicloHidrogenio",
+    "EventoCorrenteCicloHidrogenio",
+    "TransitorioCicloHidrogenio",
+    "comparar_geradores_hidrogenio",
     "ClienteTarifasANEEL",
     "PerfilConsumo",
     "TarifaSnapshot",

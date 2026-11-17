@@ -15,6 +15,15 @@ from .analises.transitorio_bess_fv import ConfiguracaoTransitorio, TransitorioBe
 from .analises.graficos_interativos import gerar_html_interativo
 from .analises.regime_permanente import ConfiguracaoRegimePermanente, RegimePermanente
 from .analises.transitorio_gerador_diesel import ConfiguracaoTransitorioDiesel, TransitorioGeradorDiesel
+from .analises.transitorio_eletrolisador_pem import (
+    ConfiguracaoTransitorioEletrolisadorPEM,
+    TransitorioEletrolisadorPEM,
+)
+from .analises.transitorio_ciclo_hidrogenio import (
+    ConfiguracaoTransitorioCicloHidrogenio,
+    TransitorioCicloHidrogenio,
+    comparar_geradores_hidrogenio,
+)
 from .dados.tarifas_aneel import ClienteTarifasANEEL, ErroTarifasANEEL
 
 
@@ -77,6 +86,25 @@ def _parser() -> argparse.ArgumentParser:
     diesel = subparsers.add_parser("transitorio-gerador-diesel", help="Testa o gerador diesel isolado em modo offgrid.")
     diesel.add_argument("--entrada", required=True, help="JSON proprio do teste do gerador diesel.")
     diesel.add_argument("--saida", default=None, help="Arquivo JSON de saida.")
+    eletrolisador = subparsers.add_parser(
+        "transitorio-eletrolisador-pem",
+        help="Executa o modelo transitório elétrico do stack PEM com corrente prescrita.",
+    )
+    eletrolisador.add_argument("--entrada", required=True, help="JSON com parâmetros do PEM e perfil de corrente.")
+    eletrolisador.add_argument("--saida", default=None, help="Arquivo JSON de saída.")
+    ciclo_hidrogenio = subparsers.add_parser(
+        "transitorio-ciclo-hidrogenio",
+        help="Simula eletrolisador, estoque de H₂ e gerador PEMFC ou motor reciprocante.",
+    )
+    ciclo_hidrogenio.add_argument("--entrada", required=True, help="JSON com o eletrolisador, uma alternativa de gerador e o tanque de H₂.")
+    ciclo_hidrogenio.add_argument("--saida", default=None, help="Arquivo JSON de saída.")
+    comparar_hidrogenio = subparsers.add_parser(
+        "comparar-geradores-hidrogenio",
+        help="Compara cenários PEMFC e motor H₂ com o mesmo PEME, tanque e perfil de produção.",
+    )
+    comparar_hidrogenio.add_argument("--entrada-pemfc", required=True, help="JSON do ciclo com gerador PEMFC.")
+    comparar_hidrogenio.add_argument("--entrada-motor", required=True, help="JSON do ciclo com motor reciprocante a H₂.")
+    comparar_hidrogenio.add_argument("--saida", default=None, help="Arquivo JSON com as duas séries e a comparação.")
     cenario.add_argument("--graficos-dir", default=None, help="Pasta opcional para salvar os gráficos PNG.")
 
     transitorio = subparsers.add_parser("transitorio-bess-fv", help="Executa simulação transitória em segundos a partir de Entradas.Json.")
@@ -190,6 +218,52 @@ def main(argv: list[str] | None = None) -> int:
                 caminho.parent.mkdir(parents=True, exist_ok=True)
                 resultado["arquivo_saida"] = str(caminho)
                 caminho.write_text(json.dumps(resultado, ensure_ascii=False, indent=2, default=_json_default), encoding="utf-8")
+            _imprimir(resultado)
+            return 0
+
+        if args.comando == "transitorio-eletrolisador-pem":
+            resultado = TransitorioEletrolisadorPEM(
+                ConfiguracaoTransitorioEletrolisadorPEM.from_json(args.entrada)
+            ).executar()
+            if args.saida:
+                caminho = Path(args.saida)
+                caminho.parent.mkdir(parents=True, exist_ok=True)
+                resultado["arquivo_saida"] = str(caminho)
+                caminho.write_text(
+                    json.dumps(resultado, ensure_ascii=False, indent=2, default=_json_default),
+                    encoding="utf-8",
+                )
+            _imprimir(resultado)
+            return 0
+
+        if args.comando == "transitorio-ciclo-hidrogenio":
+            resultado = TransitorioCicloHidrogenio(
+                ConfiguracaoTransitorioCicloHidrogenio.from_json(args.entrada)
+            ).executar()
+            if args.saida:
+                caminho = Path(args.saida)
+                caminho.parent.mkdir(parents=True, exist_ok=True)
+                resultado["arquivo_saida"] = str(caminho)
+                caminho.write_text(
+                    json.dumps(resultado, ensure_ascii=False, indent=2, default=_json_default),
+                    encoding="utf-8",
+                )
+            _imprimir(resultado)
+            return 0
+
+        if args.comando == "comparar-geradores-hidrogenio":
+            resultado = comparar_geradores_hidrogenio(
+                args.entrada_pemfc,
+                args.entrada_motor,
+            )
+            if args.saida:
+                caminho = Path(args.saida)
+                caminho.parent.mkdir(parents=True, exist_ok=True)
+                resultado["arquivo_saida"] = str(caminho)
+                caminho.write_text(
+                    json.dumps(resultado, ensure_ascii=False, indent=2, default=_json_default),
+                    encoding="utf-8",
+                )
             _imprimir(resultado)
             return 0
 

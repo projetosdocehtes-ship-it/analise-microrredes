@@ -1,0 +1,53 @@
+{
+  "_nota": "Demonstracao; parametros PEME sao placeholders e corrente PEME e zero. Substitua por dados medidos antes de estudo real.",
+  "eletrolisador_pem_info": [
+    {
+      "V_rev_cell_V": 1.48,
+      "R_ohm_cell_Ohm": 0.02,
+      "R_act_cell_Ohm": 0.05,
+      "R_con_cell_Ohm": 0.05,
+      "C_dle_cell_F": 10.0,
+      "n_series_cells": 1,
+      "eficiencia_faradaica": 0.98
+    }
+  ],
+  "gerador_hidrogenio_info": [
+    {
+      "modelo_transitorio": "opem_padulles_i",
+      "gerador_id": "PadullesI_demo",
+      "N0": 88,
+      "E0": 0.6,
+      "T": 343,
+      "KH2": 4.22e-05,
+      "KO2": 2.11e-05,
+      "tH2": 3.37,
+      "tO2": 6.74,
+      "B": 0.04777,
+      "C": 0.0136,
+      "Rint": 0.00303,
+      "rho": 1.168,
+      "qH2": 0.0004
+    }
+  ],
+  "armazenamento_hidrogenio_info": [
+    {
+      "capacidade_kg": 2.0,
+      "massa_inicial_kg": 1.0
+    }
+  ],
+  "estudos": {
+    "transitorio_ciclo_hidrogenio": {
+      "passo_s": 0.1,
+      "duracao_s": 20.0,
+      "corrente_eletrolisador_inicial_A": 0.0,
+      "corrente_gerador_inicial_A": 10.0
+    }
+  },
+  "eventos": [
+    {
+      "componente": "gerador",
+      "inicio_s": 5.0,
+      "corrente_stack_A": 100.0
+    }
+  ]
+}

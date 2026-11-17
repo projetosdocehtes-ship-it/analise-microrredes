@@ -201,6 +201,17 @@ class _ParametrosOperacao:
     diesel_custo_equipamento_por_unidade: float
     diesel_custo_equipamento_total: float
     diesel_tempo_operacao_h: float | None
+    eletrolisador_pem_potencia_stack_kw: float
+    eletrolisador_pem_potencia_ac_kw: float
+    eletrolisador_pem_potencia_reativa_ac_kvar: float
+    eletrolisador_pem_quantidade: int
+    gerador_hidrogenio_pem_potencia_stack_kw: float
+    gerador_hidrogenio_pem_potencia_ac_kw: float
+    gerador_hidrogenio_pem_consumo_h2_kg_h: float
+    gerador_hidrogenio_pem_quantidade: int
+    motor_hidrogenio_potencia_ac_kw: float
+    motor_hidrogenio_consumo_h2_kg_h: float
+    motor_hidrogenio_quantidade: int
 
 
 class RegimePermanente:
@@ -225,7 +236,7 @@ class RegimePermanente:
         indices = self._indices_rede(net, documento)
         if not indices["load"]:
             raise ValueError("A rede de entrada precisa possuir pelo menos uma carga")
-        if not documento.get("conectado_rede", True) and not indices["gen"]:
+        if not documento.get("conectado_rede", True) and not indices["gen"] and not indices["h2_gen"]:
             raise ValueError("A simulação ilhada precisa possuir um gerador de referência")
 
         soc_kwh = parametros.bess_kwh * parametros.soc_inicial / 100.0
@@ -245,10 +256,22 @@ class RegimePermanente:
                 parametros,
                 hora=instante.hour,
                 pv_kw=pv_kw,
-                demanda_kw=demanda_kw,
+                demanda_kw=(
+                    demanda_kw
+                    + parametros.eletrolisador_pem_potencia_ac_kw
+                    - parametros.gerador_hidrogenio_pem_potencia_ac_kw
+                    - parametros.motor_hidrogenio_potencia_ac_kw
+                ),
                 soc_kwh=soc_kwh,
             )
-            saldo_sem_diesel_kw = demanda_kw - pv_kw - bateria_kw
+            demanda_total_kw = demanda_kw + parametros.eletrolisador_pem_potencia_ac_kw
+            saldo_sem_diesel_kw = (
+                demanda_total_kw
+                - pv_kw
+                - bateria_kw
+                - parametros.gerador_hidrogenio_pem_potencia_ac_kw
+                - parametros.motor_hidrogenio_potencia_ac_kw
+            )
             conectado_rede = bool(documento.get("conectado_rede", True))
             diesel_kw = 0.0
             deficit_kw = 0.0
@@ -281,6 +304,10 @@ class RegimePermanente:
                 indices=indices,
                 instante=instante,
                 demanda_kw=demanda_kw,
+                demanda_total_kw=demanda_total_kw,
+                eletrolisador_pem_kw=parametros.eletrolisador_pem_potencia_ac_kw,
+                gerador_hidrogenio_pem_kw=parametros.gerador_hidrogenio_pem_potencia_ac_kw,
+                motor_hidrogenio_kw=parametros.motor_hidrogenio_potencia_ac_kw,
                 pv_bruta_kw=pv_bruta_kw,
                 pv_kw=pv_kw,
                 bateria_kw=bateria_kw,
@@ -310,6 +337,15 @@ class RegimePermanente:
                 "perfil_solar": "curva senoidal fixa entre 06:00 e 18:00",
                 "convencao_rede_kw": "positivo importa; negativo exporta",
                 "convencao_bateria_kw": "positivo descarrega; negativo carrega",
+                "eletrolisador_pem": (
+                    "potência estática do stack adicionada à demanda; interface AC conforme eficiência e fator de potência"
+                ),
+                "gerador_hidrogenio_pem": (
+                    "potência estática da PEMFC subtraída do balanço de demanda e injetada na rede como sgen"
+                ),
+                "motor_hidrogenio": (
+                    "potência do motor a H2 subtraída do balanço de demanda e injetada na rede como sgen"
+                ),
                 "soc_continua_no_horizonte": configuracao.periodo == "ano",
                 "tempo_operacao_gerador_h": (
                     "limite acumulado no horizonte; nulo significa sem limite"
@@ -317,6 +353,23 @@ class RegimePermanente:
             },
             "resumo": self._resumo(passos, parametros),
             "analise_economica": self._analise_economica(passos, parametros),
+            "eletrolisador_pem": {
+                "quantidade": parametros.eletrolisador_pem_quantidade,
+                "potencia_stack_kw": parametros.eletrolisador_pem_potencia_stack_kw,
+                "potencia_ac_kw": parametros.eletrolisador_pem_potencia_ac_kw,
+                "potencia_reativa_ac_kvar": parametros.eletrolisador_pem_potencia_reativa_ac_kvar,
+            },
+            "gerador_hidrogenio_pem": {
+                "quantidade": parametros.gerador_hidrogenio_pem_quantidade,
+                "potencia_stack_kw": parametros.gerador_hidrogenio_pem_potencia_stack_kw,
+                "potencia_ac_kw": parametros.gerador_hidrogenio_pem_potencia_ac_kw,
+                "consumo_h2_kg_h": parametros.gerador_hidrogenio_pem_consumo_h2_kg_h,
+            },
+            "motor_hidrogenio": {
+                "quantidade": parametros.motor_hidrogenio_quantidade,
+                "potencia_ac_kw": parametros.motor_hidrogenio_potencia_ac_kw,
+                "consumo_h2_kg_h": parametros.motor_hidrogenio_consumo_h2_kg_h,
+            },
             "passos_horarios": passos,
         }
 
@@ -367,6 +420,26 @@ class RegimePermanente:
         carga = _primeiro(documento, "cargas_info")
         bateria = _primeiro(documento, "bateria_info")
         diesel = _primeiro(documento, "geradordiesel_info")
+        eletrolisador = _primeiro(documento, "eletrolisador_pem_info")
+        gerador_hidrogenio = _primeiro(documento, "gerador_hidrogenio_info")
+        if not gerador_hidrogenio:
+            gerador_hidrogenio = _primeiro(documento, "celula_combustivel_pem_info")
+        motor_hidrogenio = _primeiro(documento, "motor_hidrogenio_info")
+        parametros_eletrolisador = (
+            AnaliseFluxoPotencia.calcular_carga_eletrolisador_pem(eletrolisador)
+            if eletrolisador
+            else None
+        )
+        parametros_gerador_hidrogenio = (
+            AnaliseFluxoPotencia.calcular_geracao_hidrogenio_pem(gerador_hidrogenio)
+            if gerador_hidrogenio
+            else None
+        )
+        parametros_motor_hidrogenio = (
+            AnaliseFluxoPotencia.calcular_geracao_motor_hidrogenio(motor_hidrogenio)
+            if motor_hidrogenio
+            else None
+        )
 
         fp = _numero(carga.get("fp"), 0.95)
         if not 0 < fp <= 1:
@@ -505,6 +578,53 @@ class RegimePermanente:
             diesel_custo_equipamento_por_unidade=custo_equipamento,
             diesel_custo_equipamento_total=custo_equipamento * diesel_quantidade,
             diesel_tempo_operacao_h=tempo_operacao,
+            eletrolisador_pem_potencia_stack_kw=(
+                parametros_eletrolisador["potencia_stack_kw"] if parametros_eletrolisador else 0.0
+            ),
+            eletrolisador_pem_potencia_ac_kw=(
+                parametros_eletrolisador["potencia_ac_kw"] if parametros_eletrolisador else 0.0
+            ),
+            eletrolisador_pem_potencia_reativa_ac_kvar=(
+                parametros_eletrolisador["potencia_reativa_ac_kvar"] if parametros_eletrolisador else 0.0
+            ),
+            eletrolisador_pem_quantidade=(
+                parametros_eletrolisador["quantidade"] if parametros_eletrolisador else 0
+            ),
+            gerador_hidrogenio_pem_potencia_stack_kw=(
+                parametros_gerador_hidrogenio["potencia_stack_kw"]
+                if parametros_gerador_hidrogenio
+                else 0.0
+            ),
+            gerador_hidrogenio_pem_potencia_ac_kw=(
+                parametros_gerador_hidrogenio["potencia_ac_kw"]
+                if parametros_gerador_hidrogenio
+                else 0.0
+            ),
+            gerador_hidrogenio_pem_consumo_h2_kg_h=(
+                parametros_gerador_hidrogenio["consumo_h2"]["vazao_h2_tanque_kg_h"]
+                if parametros_gerador_hidrogenio
+                else 0.0
+            ),
+            gerador_hidrogenio_pem_quantidade=(
+                parametros_gerador_hidrogenio["quantidade"]
+                if parametros_gerador_hidrogenio
+                else 0
+            ),
+            motor_hidrogenio_potencia_ac_kw=(
+                parametros_motor_hidrogenio["potencia_ac_kw"]
+                if parametros_motor_hidrogenio
+                else 0.0
+            ),
+            motor_hidrogenio_consumo_h2_kg_h=(
+                parametros_motor_hidrogenio["consumo_h2_kg_h"]
+                if parametros_motor_hidrogenio
+                else 0.0
+            ),
+            motor_hidrogenio_quantidade=(
+                parametros_motor_hidrogenio["quantidade"]
+                if parametros_motor_hidrogenio
+                else 0
+            ),
         )
 
     @staticmethod
@@ -512,6 +632,11 @@ class RegimePermanente:
         painel = _primeiro(documento, "painel_info")
         bateria = _primeiro(documento, "bateria_info")
         diesel = _primeiro(documento, "geradordiesel_info")
+        eletrolisador = _primeiro(documento, "eletrolisador_pem_info")
+        gerador_hidrogenio = _primeiro(documento, "gerador_hidrogenio_info")
+        if not gerador_hidrogenio:
+            gerador_hidrogenio = _primeiro(documento, "celula_combustivel_pem_info")
+        motor_hidrogenio = _primeiro(documento, "motor_hidrogenio_info")
         nomes_pv = {str(painel.get("pv_id"))} if painel.get("pv_id") else set()
         nomes_bess = {str(bateria.get("bateria_id"))} if bateria.get("bateria_id") else set()
         nomes_diesel = {str(diesel.get("diesel_id"))} if diesel.get("diesel_id") else set()
@@ -519,14 +644,43 @@ class RegimePermanente:
         bess = [int(idx) for idx, row in net.sgen.iterrows() if str(row.get("name")) in nomes_bess]
         diesel_sgen = [int(idx) for idx, row in net.sgen.iterrows() if str(row.get("name")) in nomes_diesel]
         diesel_gen = [int(idx) for idx, row in net.gen.iterrows() if str(row.get("name")) in nomes_diesel]
+        nomes_h2 = set()
+        if gerador_hidrogenio:
+            nomes_h2.add(
+                str(
+                    gerador_hidrogenio.get("gerador_id")
+                    or gerador_hidrogenio.get("id_gerador")
+                    or "Gerador_Hidrogenio_PEM_1"
+                )
+            )
+        if motor_hidrogenio:
+            nomes_h2.add(
+                str(
+                    motor_hidrogenio.get("motor_id")
+                    or motor_hidrogenio.get("gerador_id")
+                    or motor_hidrogenio.get("id_gerador")
+                    or "Gerador_Motor_H2_1"
+                )
+            )
+        h2_gen = [int(idx) for idx, row in net.gen.iterrows() if str(row.get("name")) in nomes_h2]
+        nome_eletrolisador = str(
+            eletrolisador.get("eletrolisador_id")
+            or eletrolisador.get("id_eletrolisador")
+            or "Eletrolisador_PEM_1"
+        )
+        eletrolisador_load = [
+            int(idx) for idx, row in net.load.iterrows() if str(row.get("name")) == nome_eletrolisador
+        ] if eletrolisador else []
         pcc_id = str((_primeiro(documento, "barramento_info")).get("bus_id") or "Bus_ac_1")
         pcc = next((int(idx) for idx, row in net.bus.iterrows() if str(row.get("name")) == pcc_id), 0)
         return {
             "load": [int(idx) for idx in net.load.index],
+            "eletrolisador_load": eletrolisador_load,
             "pv": pv,
             "bess": bess,
             "diesel_sgen": diesel_sgen,
             "gen": diesel_gen,
+            "h2_gen": h2_gen,
             "pcc": pcc,
         }
 
@@ -567,6 +721,10 @@ class RegimePermanente:
         load_idx = indices["load"][0]
         net.load.at[load_idx, "p_mw"] = demanda_kw / 1000.0
         net.load.at[load_idx, "q_mvar"] = demanda_kw * math.tan(math.acos(parametros.fator_potencia)) / 1000.0
+        for idx in indices["eletrolisador_load"]:
+            divisor = max(len(indices["eletrolisador_load"]), 1)
+            net.load.at[idx, "p_mw"] = parametros.eletrolisador_pem_potencia_ac_kw / 1000.0 / divisor
+            net.load.at[idx, "q_mvar"] = parametros.eletrolisador_pem_potencia_reativa_ac_kvar / 1000.0 / divisor
         for idx in indices["pv"]:
             net.sgen.at[idx, "p_mw"] = pv_kw / 1000.0 / max(len(indices["pv"]), 1)
             net.sgen.at[idx, "q_mvar"] = 0.0
@@ -585,6 +743,10 @@ class RegimePermanente:
         indices: dict[str, list[int] | int | None],
         instante: datetime,
         demanda_kw: float,
+        demanda_total_kw: float,
+        eletrolisador_pem_kw: float,
+        gerador_hidrogenio_pem_kw: float,
+        motor_hidrogenio_kw: float,
         pv_bruta_kw: float,
         pv_kw: float,
         bateria_kw: float,
@@ -604,6 +766,10 @@ class RegimePermanente:
             "dia_semana": instante.weekday(),
             "tipo_dia": "util" if instante.weekday() < 5 else "fim_semana",
             "demanda_kw": round(demanda_kw, 6),
+            "eletrolisador_pem_kw": round(eletrolisador_pem_kw, 6),
+            "gerador_hidrogenio_pem_kw": round(gerador_hidrogenio_pem_kw, 6),
+            "motor_hidrogenio_kw": round(motor_hidrogenio_kw, 6),
+            "demanda_total_kw": round(demanda_total_kw, 6),
             "pv_bruta_kw": round(pv_bruta_kw, 6),
             "pv_kw": round(pv_kw, 6),
             "bateria_kw": round(bateria_kw, 6),
@@ -644,6 +810,24 @@ class RegimePermanente:
             "horas_convergidas": len(convergidos),
             "horas_nao_convergidas": len(passos) - len(convergidos),
             "energia_carga_kwh": round(sum(passo["demanda_kw"] for passo in passos), 6),
+            "energia_eletrolisador_pem_kwh": round(
+                sum(passo["eletrolisador_pem_kw"] for passo in passos), 6
+            ),
+            "energia_gerador_hidrogenio_pem_kwh": round(
+                sum(passo["gerador_hidrogenio_pem_kw"] for passo in passos), 6
+            ),
+            "consumo_h2_gerador_pem_kg": round(
+                parametros.gerador_hidrogenio_pem_consumo_h2_kg_h * len(passos), 9
+            ),
+            "energia_motor_hidrogenio_kwh": round(
+                sum(passo["motor_hidrogenio_kw"] for passo in passos), 6
+            ),
+            "consumo_h2_motor_kg": round(
+                parametros.motor_hidrogenio_consumo_h2_kg_h * len(passos), 9
+            ),
+            "energia_carga_total_kwh": round(
+                sum(passo["demanda_total_kw"] for passo in passos), 6
+            ),
             "energia_pv_kwh": round(sum(passo["pv_kw"] for passo in passos), 6),
             "energia_bateria_carga_kwh": round(sum(max(-passo["bateria_kw"], 0.0) for passo in passos), 6),
             "energia_bateria_descarga_kwh": round(sum(max(passo["bateria_kw"], 0.0) for passo in passos), 6),

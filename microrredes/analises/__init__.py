@@ -12,6 +12,17 @@ from .transitorio_gerador_diesel import (
     EventoGeradorDiesel,
     TransitorioGeradorDiesel,
 )
+from .transitorio_eletrolisador_pem import (
+    ConfiguracaoTransitorioEletrolisadorPEM,
+    EventoCorrenteEletrolisadorPEM,
+    TransitorioEletrolisadorPEM,
+)
+from .transitorio_ciclo_hidrogenio import (
+    ConfiguracaoTransitorioCicloHidrogenio,
+    EventoCorrenteCicloHidrogenio,
+    TransitorioCicloHidrogenio,
+    comparar_geradores_hidrogenio,
+)
 
 __all__ = [
     "AnaliseFalhas",
@@ -30,4 +41,11 @@ __all__ = [
     "ConfiguracaoTransitorioDiesel",
     "EventoGeradorDiesel",
     "TransitorioGeradorDiesel",
+    "ConfiguracaoTransitorioEletrolisadorPEM",
+    "EventoCorrenteEletrolisadorPEM",
+    "TransitorioEletrolisadorPEM",
+    "ConfiguracaoTransitorioCicloHidrogenio",
+    "EventoCorrenteCicloHidrogenio",
+    "TransitorioCicloHidrogenio",
+    "comparar_geradores_hidrogenio",
 ]
